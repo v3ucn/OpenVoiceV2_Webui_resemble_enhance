@@ -3,7 +3,8 @@ import gradio as gr
 import os, torch, io
 
 from openvoice import se_extractor
-from openvoice.api import ToneColorConverter
+from openvoice.api import ToneColorConverter,BaseSpeakerTTS
+
 
 from melo.api import TTS
 
@@ -12,6 +13,9 @@ from resemble_enhance.enhancer.inference import denoise, enhance
 import torchaudio
 import soundfile as sf
 import gc
+
+import soundfile as sf
+import pyloudnorm as pyln
 
 
 
@@ -88,8 +92,11 @@ def reference(text,speed,wav,language):
         speaker_key = speaker_key.lower().replace('_', '-')
         
         source_se = torch.load(f'./checkpoints_v2/base_speakers/ses/{speaker_key}.pth', map_location=device)
+        print(speaker_id)
         model.tts_to_file(text, speaker_id, src_path, speed=speed)
         save_path = f'{output_dir}/output_v2_{speaker_key}.wav'
+
+
 
         # Run the tone color converter
         encode_message = "@MyShell"
@@ -99,6 +106,21 @@ def reference(text,speed,wav,language):
             tgt_se=target_se, 
             output_path=save_path,
             message=encode_message)
+
+        # 加载音频文件
+        data, rate = sf.read(f'{output_dir}/output_v2_{speaker_key}.wav')
+
+        # 峰值归一化至 -1 dB
+        peak_normalized_audio = pyln.normalize.peak(data, -1.0)
+
+        # 测量响度
+        meter = pyln.Meter(rate)
+        loudness = meter.integrated_loudness(data)
+
+        # 响度归一化至 -12 dB LUFS
+        loudness_normalized_audio = pyln.normalize.loudness(data, loudness, -12.0)
+
+        sf.write(f'{output_dir}/output_v2_{speaker_key}.wav', loudness_normalized_audio, rate)
 
     return save_path
 
